@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:clean": "powershell -NoProfile -Command \"if (Test-Path .next) { Remove-Item .next -Recurse -Force }\" && next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "powershell -NoProfile -Command \"$project = (Split-Path $env:npm_package_json) -replace '^[\\\\/]{2}\\?\\\\', ''; Set-Location -LiteralPath $project; $next = Join-Path $project 'node_modules\\next\\dist\\bin\\next'; node $next dev $project\"",
+    "dev:clean": "powershell -NoProfile -Command \"$project = (Split-Path $env:npm_package_json) -replace '^[\\\\/]{2}\\?\\\\', ''; Set-Location -LiteralPath $project; if (Test-Path .next) { Remove-Item .next -Recurse -Force }; $next = Join-Path $project 'node_modules\\next\\dist\\bin\\next'; node $next dev $project\"",
+    "build": "powershell -NoProfile -Command \"$project = (Split-Path $env:npm_package_json) -replace '^[\\\\/]{2}\\?\\\\', ''; Set-Location -LiteralPath $project; $next = Join-Path $project 'node_modules\\next\\dist\\bin\\next'; node $next build $project\"",
+    "start": "powershell -NoProfile -Command \"$project = (Split-Path $env:npm_package_json) -replace '^[\\\\/]{2}\\?\\\\', ''; Set-Location -LiteralPath $project; $next = Join-Path $project 'node_modules\\next\\dist\\bin\\next'; node $next start $project\"",
+    "lint": "powershell -NoProfile -Command \"$project = (Split-Path $env:npm_package_json) -replace '^[\\\\/]{2}\\?\\\\', ''; Set-Location -LiteralPath $project; $next = Join-Path $project 'node_modules\\next\\dist\\bin\\next'; node $next lint $project\""
   },
   "dependencies": {
     "next": "14.2.29",

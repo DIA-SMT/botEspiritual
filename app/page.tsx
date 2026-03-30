@@ -1,16 +1,52 @@
 ﻿"use client";
 
-import { FormEvent, KeyboardEvent, SVGProps, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  SVGProps,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type Message = {
   role: "user" | "assistant";
   content: string;
 };
 
+type AvatarState = "idle" | "thinking" | "speaking";
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+    SpeechRecognition?: new () => BrowserSpeechRecognition;
+  }
+}
+
 const initialMessage: Message = {
   role: "assistant",
   content:
-    "Bienvenido. Soy tu guia espiritual para esta Semana Santa en El Rosedal, Parque 9 de Julio. Puedo orientarte sobre el Via Crucis inmersivo, los horarios y el recorrido, pero tambien acompanarte con reflexiones, ayudas para orar, rezos breves, mensajes de esperanza y consultas sobre el sentido espiritual de este tiempo.",
+    "Bienvenido. Soy tu guia espiritual para esta Semana Santa en El Rosedal, Parque 9 de Julio. Puedo acompanarte con reflexiones sobre el Via Crucis, ayudas para orar, rezos breves, mensajes de esperanza y tambien orientarte sobre el recorrido, el ingreso y los horarios del encuentro.",
+};
+
+const IDLE_AVATAR_VIDEOS = ["/asentamiento.mp4", "/animacionManos.mp4"] as const;
+
+const AVATAR_VIDEO_BY_STATE: Record<AvatarState, string> = {
+  idle: IDLE_AVATAR_VIDEOS[0],
+  thinking: "/pensamiento.mp4",
+  speaking: "/habla.mp4",
 };
 
 function CrossIcon(props: SVGProps<SVGSVGElement>) {
@@ -43,20 +79,93 @@ function PathIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function MicIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" {...props}>
+      <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" />
+      <path d="M6.8 11.3a5.2 5.2 0 0 0 10.4 0" strokeLinecap="round" />
+      <path d="M12 16.5V20" strokeLinecap="round" />
+      <path d="M9.5 20h5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function StopIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <rect x="6.5" y="6.5" width="11" height="11" rx="2.5" />
+    </svg>
+  );
+}
+
+function pickMaleVoice(voices: SpeechSynthesisVoice[]) {
+  const spanishVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("es"));
+  if (!spanishVoices.length) return null;
+
+  const maleHint = /(male|mascul|diego|carlos|jorge|juan|miguel|pablo|antonio|raul|federico|martin|tomas|lucas|enrique)/i;
+
+  return (
+    spanishVoices.find((voice) => voice.lang.toLowerCase().startsWith("es-ar") && maleHint.test(voice.name)) ||
+    spanishVoices.find((voice) => maleHint.test(voice.name)) ||
+    spanishVoices.find((voice) => voice.lang.toLowerCase().startsWith("es-ar")) ||
+    spanishVoices[0]
+  );
+}
+
+
+function muteVideoElement(video: HTMLVideoElement | null) {
+  if (!video) return;
+  video.muted = true;
+  video.defaultMuted = true;
+  video.volume = 0;
+}
+
+function sanitizeSpeechText(text: string) {
+  return text
+    .replace(/([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\/([A-Za-zÁÉÍÓÚáéíóúÑñ]+)/g, "$1")
+    .replace(/[•·]/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function HomePage() {
   const [messages, setMessages] = useState<Message[]>([initialMessage]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [avatarMode, setAvatarMode] = useState(false);
+  const [avatarState, setAvatarState] = useState<AvatarState>("idle");
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [voiceInputSupported, setVoiceInputSupported] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [idleVideoIndex, setIdleVideoIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const avatarVideoRef = useRef<HTMLVideoElement | null>(null);
+  const idlePrimaryVideoRef = useRef<HTMLVideoElement | null>(null);
+  const idleSecondaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const messagesContainerRef = useRef<HTMLElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+
+  const latestAssistantMessage = useMemo(
+    () => [...messages].reverse().find((message) => message.role === "assistant") || null,
+    [messages]
+  );
 
   useEffect(() => {
-    if (!shouldStickToBottomRef.current) return;
+    setSpeechSupported(typeof window !== "undefined" && "speechSynthesis" in window);
+    setVoiceInputSupported(
+      typeof window !== "undefined" &&
+        Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!shouldStickToBottomRef.current || avatarMode) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, avatarMode]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -65,15 +174,132 @@ export default function HomePage() {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
   }, [input]);
 
-  async function handleSubmit(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
+  useEffect(() => {
+    if (avatarMode) return;
+    stopAudio();
+    stopRecording();
+    setAvatarState("idle");
+  }, [avatarMode]);
 
-    const content = input.trim();
-    if (!content || isLoading) return;
+  useEffect(() => {
+    if (!avatarMode) {
+      setIdleVideoIndex(0);
+      return;
+    }
+
+    if (avatarState !== "idle") {
+      idlePrimaryVideoRef.current?.pause();
+      idleSecondaryVideoRef.current?.pause();
+      return;
+    }
+
+    const activeVideo = idleVideoIndex === 0 ? idlePrimaryVideoRef.current : idleSecondaryVideoRef.current;
+    const inactiveVideo = idleVideoIndex === 0 ? idleSecondaryVideoRef.current : idlePrimaryVideoRef.current;
+
+    muteVideoElement(activeVideo);
+    muteVideoElement(inactiveVideo);
+
+    if (inactiveVideo) {
+      inactiveVideo.pause();
+      inactiveVideo.currentTime = 0;
+    }
+
+    if (activeVideo) {
+      activeVideo.currentTime = 0;
+      void activeVideo.play().catch(() => undefined);
+    }
+  }, [avatarMode, avatarState, idleVideoIndex]);
+
+  useEffect(() => {
+    muteVideoElement(avatarVideoRef.current);
+    muteVideoElement(idlePrimaryVideoRef.current);
+    muteVideoElement(idleSecondaryVideoRef.current);
+  }, [avatarMode, avatarState, idleVideoIndex]);
+
+  function stopAudio() {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    utteranceRef.current = null;
+    setAvatarState((current) => (current === "thinking" ? current : "idle"));
+  }
+
+  function handleAvatarVideoEnded() {
+    if (avatarState !== "idle") return;
+
+    const nextIndex = idleVideoIndex === 0 ? 1 : 0;
+    const currentVideo = idleVideoIndex === 0 ? idlePrimaryVideoRef.current : idleSecondaryVideoRef.current;
+    const nextVideo = nextIndex === 0 ? idlePrimaryVideoRef.current : idleSecondaryVideoRef.current;
+
+    muteVideoElement(currentVideo);
+    muteVideoElement(nextVideo);
+
+    if (nextVideo) {
+      nextVideo.currentTime = 0;
+      void nextVideo.play().catch(() => undefined);
+    }
+
+    window.setTimeout(() => {
+      if (currentVideo) {
+        currentVideo.pause();
+        currentVideo.currentTime = 0;
+      }
+    }, 180);
+
+    setIdleVideoIndex(nextIndex);
+  }
+
+  function stopRecording() {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setIsRecording(false);
+  }
+
+  function speakAssistantReply(text: string) {
+    if (!avatarMode || !speechSupported || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setAvatarState("idle");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(sanitizeSpeechText(text));
+    const preferredVoice = pickMaleVoice(window.speechSynthesis.getVoices());
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang;
+    } else {
+      utterance.lang = "es-AR";
+    }
+
+    utterance.rate = 0.98;
+    utterance.pitch = 0.78;
+    utterance.onstart = () => setAvatarState("speaking");
+    utterance.onend = () => {
+      utteranceRef.current = null;
+      setAvatarState("idle");
+    };
+    utterance.onerror = () => {
+      utteranceRef.current = null;
+      setAvatarState("idle");
+    };
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function sendMessage(content: string) {
+    if (!content.trim() || isLoading) return;
 
     shouldStickToBottomRef.current = true;
 
-    const nextMessages: Message[] = [...messages, { role: "user", content }];
+    if (avatarMode) {
+      setAvatarState("thinking");
+      stopAudio();
+    }
+
+    const nextMessages: Message[] = [...messages, { role: "user", content: content.trim() }];
     setMessages([...nextMessages, { role: "assistant", content: "" }]);
     setInput("");
     setIsLoading(true);
@@ -114,6 +340,12 @@ export default function HomePage() {
       if (!assistantReply.trim()) {
         throw new Error("La respuesta llego vacia.");
       }
+
+      if (avatarMode) {
+        speakAssistantReply(assistantReply);
+      } else {
+        setAvatarState("idle");
+      }
     } catch (err) {
       setMessages((current) =>
         current.filter(
@@ -128,9 +360,15 @@ export default function HomePage() {
 
       const message = err instanceof Error ? err.message : "Ocurrio un error inesperado.";
       setError(message);
+      setAvatarState("idle");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function handleSubmit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    await sendMessage(input);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -149,21 +387,51 @@ export default function HomePage() {
     shouldStickToBottomRef.current = distanceFromBottom < 96;
   }
 
+  function toggleRecording() {
+    if (!voiceInputSupported || typeof window === "undefined") return;
+
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) return;
+
+    const recognition = new Recognition();
+    recognition.lang = "es-AR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript || "")
+        .join(" ")
+        .trim();
+
+      if (transcript) {
+        setInput(transcript);
+        void sendMessage(transcript);
+      }
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setIsRecording(false);
+    };
+    recognition.onerror = () => {
+      recognitionRef.current = null;
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = recognition;
+    setIsRecording(true);
+    recognition.start();
+  }
+
   return (
     <main className="relative flex h-[100dvh] overflow-hidden bg-transparent text-slate-900">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-0 h-52 w-52 -translate-x-1/2 rounded-full bg-amber-300/20 blur-3xl sm:h-64 sm:w-64" />
-        <div className="absolute left-[6%] top-[10%] h-56 w-56 rounded-full bg-purple-900/10 blur-3xl sm:h-72 sm:w-72" />
-        <div className="absolute bottom-[8%] right-[4%] h-64 w-64 rounded-full bg-red-200/20 blur-3xl sm:h-80 sm:w-80" />
-      </div>
-
       <section className="relative mx-auto flex h-full w-full max-w-7xl px-0 py-0 sm:px-3 sm:py-3 xl:px-5 xl:py-5">
-        <div className="grid h-full w-full min-h-0 overflow-hidden bg-white/74 shadow-[0_30px_80px_-30px_rgba(76,29,149,0.45)] backdrop-blur-xl sm:rounded-[2rem] xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="relative hidden overflow-hidden border-r border-purple-100/80 bg-[linear-gradient(180deg,rgba(70,16,25,0.96),rgba(88,28,135,0.94))] xl:flex xl:flex-col xl:p-8">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.22),transparent_24%),linear-gradient(135deg,rgba(255,255,255,0.07),transparent_38%)]" />
-            <div className="absolute right-8 top-10 h-40 w-40 rounded-full border border-amber-300/20" />
-            <div className="absolute bottom-10 left-8 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
-
+        <div className="grid h-full w-full min-h-0 overflow-hidden bg-white/92 shadow-[0_24px_60px_-32px_rgba(76,29,149,0.22)] sm:rounded-[2rem] xl:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="relative hidden overflow-hidden border-r border-purple-100/80 bg-[linear-gradient(180deg,rgba(70,16,25,0.98),rgba(88,28,135,0.96))] xl:flex xl:flex-col xl:p-8">
             <div className="relative z-10 flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-[1.4rem] border border-amber-200/30 bg-white/10 text-amber-300 shadow-lg shadow-black/10">
                 <CrossIcon className="h-7 w-7" />
@@ -217,17 +485,10 @@ export default function HomePage() {
           </aside>
 
           <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-            <div className="pointer-events-none absolute inset-0 opacity-70">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(88,28,135,0.08),transparent_22%),radial-gradient(circle_at_bottom_right,rgba(251,191,36,0.08),transparent_22%)]" />
-              <div className="absolute right-3 top-3 h-20 w-20 rounded-full border border-amber-300/20 sm:right-6 sm:top-6 sm:h-24 sm:w-24" />
-              <div className="absolute left-1/2 top-4 h-14 w-px -translate-x-1/2 bg-gradient-to-b from-amber-300/0 via-amber-300/60 to-amber-300/0 sm:top-6 sm:h-16" />
-              <div className="absolute left-1/2 top-[2.7rem] h-px w-10 -translate-x-1/2 bg-gradient-to-r from-amber-300/0 via-amber-300/70 to-amber-300/0 sm:top-[3.35rem] sm:w-12" />
-            </div>
-
-            <header className="relative z-10 shrink-0 border-b border-purple-100/80 bg-white/70 px-4 pb-3 pt-[max(0.85rem,env(safe-area-inset-top))] backdrop-blur sm:px-5 sm:pb-4 md:px-7">
+            <header className={["relative z-10 shrink-0 border-b border-purple-100/80 bg-white/88 px-4 pb-3 pt-[max(0.85rem,env(safe-area-inset-top))] sm:px-5 sm:pb-4 md:px-7", avatarMode ? "hidden border-b-0 bg-transparent px-0 pb-0 pt-0 md:flex" : "flex"].join(" ")}>
               <div className="flex items-start justify-between gap-3 sm:gap-4">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.3em] text-amber-600 sm:text-[11px]">
+                <div className={["min-w-0 flex-1", avatarMode ? "hidden md:block" : "block"].join(" ")}>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.3em] text-amber-700 sm:text-[11px]">
                     Semana Santa en San Miguel de Tucuman
                   </p>
                   <h1 className="mt-2 text-xl font-semibold text-slate-900 sm:text-2xl md:text-[2rem]">
@@ -238,117 +499,256 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <div className="hidden items-center gap-2 rounded-full border border-amber-200 bg-amber-50/85 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-amber-700 md:inline-flex">
+                <button
+                  type="button"
+                  onClick={() => setAvatarMode((current) => !current)}
+                  className={[
+                    "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium uppercase tracking-[0.18em] transition",
+                    avatarMode
+                      ? "border-amber-300 bg-amber-50/90 text-amber-800"
+                      : "border-purple-100 bg-white text-slate-700",
+                  ].join(" ")}
+                >
                   <CrossIcon className="h-4 w-4" />
-                  <span>Via Crucis</span>
-                </div>
-              </div>
-
-              <div className="mt-4 hidden grid-cols-1 gap-2 sm:grid sm:grid-cols-3 xl:hidden">
-                <div className="rounded-2xl border border-purple-100 bg-white/85 px-3 py-3 text-left">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <PathIcon className="h-4 w-4" />
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em]">Via Crucis</span>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-purple-100 bg-white/85 px-3 py-3 text-left">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <CrownIcon className="h-4 w-4" />
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em]">Reflexion</span>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-purple-100 bg-white/85 px-3 py-3 text-left">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <CrossIcon className="h-4 w-4" />
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em]">Esperanza</span>
-                  </div>
-                </div>
+                  <span>{avatarMode ? "Volver al chat" : "Modo avatar"}</span>
+                </button>
               </div>
             </header>
 
-            <section
-              ref={messagesContainerRef}
-              onScroll={handleMessagesScroll}
-              className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4 md:px-7"
-            >
-              <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-3 sm:gap-4">
-                {messages.map((message, index) => {
-                  const isUser = message.role === "user";
-                  const isStreamingBubble =
-                    isLoading && index === messages.length - 1 && message.role === "assistant";
+            {avatarMode ? (
+              <section className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-2 sm:px-5 sm:py-4 md:px-7">
+                <div className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col gap-2 md:gap-4 lg:grid lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:items-stretch">
+                  <div className="flex min-h-0 flex-col gap-2 sm:gap-3">
+                    <div className="relative overflow-hidden rounded-[1.35rem] border border-purple-100 bg-white shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] sm:rounded-[1.5rem]">
+                      <div className="relative aspect-[4/5] max-h-[64vh] w-full sm:max-h-[48vh] lg:max-h-none">
+                        {avatarState === "idle" ? (
+                          <>
+                            <video
+                              ref={idlePrimaryVideoRef}
+                              src={IDLE_AVATAR_VIDEOS[0]}
+                              autoPlay
+                              muted
+                              playsInline
+                              preload="auto"
+                              onEnded={idleVideoIndex === 0 ? handleAvatarVideoEnded : undefined}
+                              onLoadedMetadata={(event) => muteVideoElement(event.currentTarget)}
+                              className={[
+                                "absolute inset-0 h-full w-full object-cover transition-opacity duration-200",
+                                idleVideoIndex === 0 ? "opacity-100" : "opacity-0 pointer-events-none",
+                              ].join(" ")}
+                            />
+                            <video
+                              ref={idleSecondaryVideoRef}
+                              src={IDLE_AVATAR_VIDEOS[1]}
+                              muted
+                              playsInline
+                              preload="auto"
+                              onEnded={idleVideoIndex === 1 ? handleAvatarVideoEnded : undefined}
+                              onLoadedMetadata={(event) => muteVideoElement(event.currentTarget)}
+                              className={[
+                                "absolute inset-0 h-full w-full object-cover transition-opacity duration-200",
+                                idleVideoIndex === 1 ? "opacity-100" : "opacity-0 pointer-events-none",
+                              ].join(" ")}
+                            />
+                          </>
+                        ) : (
+                          <video
+                            ref={avatarVideoRef}
+                            key={avatarState}
+                            src={AVATAR_VIDEO_BY_STATE[avatarState]}
+                            autoPlay
+                            muted
+                            playsInline
+                            loop
+                            onLoadedMetadata={(event) => muteVideoElement(event.currentTarget)}
+                            className="h-full w-full object-cover"
+                          />
+                        )}
+                      </div>
 
-                  return (
-                    <div
-                      key={`${message.role}-${index}`}
-                      className={`flex ${isUser ? "justify-end" : "justify-start"} animate-[fadeIn_0.35s_ease]`}
-                    >
-                      <div
+                      <button
+                        type="button"
+                        onClick={() => setAvatarMode(false)}
+                        className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white/88 text-slate-700 shadow-md backdrop-blur md:hidden"
+                        aria-label="Volver al chat"
+                      >
+                        <CrossIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 px-0.5 sm:gap-3 sm:px-0">
+                      <button
+                        type="button"
+                        onClick={stopAudio}
+                        disabled={avatarState !== "speaking"}
+                        className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-3 text-sm font-medium text-rose-700 transition disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <StopIcon className="h-4 w-4" />
+                        <span>Detener</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={toggleRecording}
+                        disabled={!voiceInputSupported || isLoading}
                         className={[
-                          "max-w-[92%] rounded-[1.45rem] px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[82%] sm:rounded-[1.7rem] sm:px-5 sm:leading-7 md:max-w-[76%]",
-                          isUser
-                            ? "border border-slate-200/80 bg-white text-slate-900 shadow-[0_12px_35px_-22px_rgba(15,23,42,0.42)]"
-                            : "border border-purple-100/80 bg-gradient-to-br from-purple-50 to-white text-slate-800 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.35)]",
+                          "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border px-3 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                          isRecording
+                            ? "border-amber-300 bg-amber-50 text-amber-800"
+                            : "border-purple-100 bg-white text-slate-700",
                         ].join(" ")}
                       >
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-500 sm:text-[11px] sm:tracking-[0.28em]">
-                          {isUser ? "Tu" : "Guia"}
-                        </p>
-                        <p className="whitespace-pre-wrap break-words">
-                          {message.content}
-                          {isStreamingBubble && (
-                            <span className="ml-1 inline-block h-5 w-[2px] animate-pulse rounded-full bg-amber-500 align-middle" />
-                          )}
-                        </p>
-                      </div>
+                        <MicIcon className="h-4 w-4" />
+                        <span>{isRecording ? "Detener mic" : "Hablar"}</span>
+                      </button>
                     </div>
-                  );
-                })}
-
-                {error && (
-                  <div className="rounded-[1.35rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
-                    {error}
                   </div>
-                )}
 
-                <div ref={messagesEndRef} />
-              </div>
-            </section>
+                  <div className="hidden min-h-0 flex-col gap-3 lg:flex">
+                    <div className="rounded-[1.4rem] border border-purple-100 bg-white p-4 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.16)]">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-700">Avatar espiritual</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        {avatarState === "thinking" &&
+                          "El guia esta preparando la respuesta para acompanarte en tu consulta."}
+                        {avatarState === "speaking" &&
+                          "El guia esta respondiendo con voz mientras se reproduce el video de habla."}
+                        {avatarState === "idle" &&
+                          "El guia esta disponible para recibir nuevas preguntas, rezos o pedidos de orientacion."}
+                      </p>
+                    </div>
 
-            <form
-              onSubmit={handleSubmit}
-              className="relative z-10 shrink-0 border-t border-purple-100/80 bg-white/78 px-3 pb-[calc(0.85rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-5 sm:pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pt-4 md:px-7"
-            >
-              <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
-                <div className="flex items-end gap-2 rounded-[1.5rem] border border-purple-100/80 bg-white/92 p-2 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.34)] sm:gap-3 sm:rounded-[1.75rem]">
-                  <textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={(event) => setInput(event.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Escribe tu mensaje sobre el Via Crucis, una reflexion o una consulta espiritual..."
-                    rows={1}
-                    className="min-h-[50px] flex-1 resize-none overflow-y-auto rounded-[1.1rem] bg-transparent px-3 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 sm:min-h-[52px] sm:px-4"
-                    disabled={isLoading}
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading || !input.trim()}
-                    className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-purple-900 px-4 text-sm font-medium text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60 sm:h-12 sm:px-5"
-                  >
-                    {isLoading ? "Guiando..." : "Enviar"}
-                  </button>
+                    {latestAssistantMessage && (
+                      <div className="min-h-0 flex-1 rounded-[1.4rem] border border-purple-100 bg-white p-4 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.16)]">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-700">Ultima respuesta</p>
+                        <div className="mt-3 max-h-[34vh] overflow-y-auto pr-1 text-sm leading-6 text-slate-700">
+                          {latestAssistantMessage.content}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSubmit} className="rounded-[1.2rem] border border-purple-100 bg-white p-2 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.16)] sm:rounded-[1.4rem] lg:col-span-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={(event) => setInput(event.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Escribe tu mensaje para el guia espiritual..."
+                        rows={1}
+                        className="min-h-[52px] flex-1 resize-none overflow-y-auto rounded-[1rem] bg-transparent px-3 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                        disabled={isLoading}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isLoading || !input.trim()}
+                        className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-purple-900 px-5 text-sm font-medium text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isLoading ? "Guiando..." : "Enviar"}
+                      </button>
+                    </div>
+                    <p className="mt-2 hidden text-xs leading-5 text-slate-500 lg:block">
+                      La voz se reproducira en tono masculino cuando el navegador disponga de una voz en espanol compatible.
+                    </p>
+                  </form>
                 </div>
+              </section>
+            ) : (
+              <>
+                <section
+                  ref={messagesContainerRef}
+                  onScroll={handleMessagesScroll}
+                  className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4 md:px-7"
+                >
+                  <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-3 sm:gap-4">
+                    {messages.map((message, index) => {
+                      const isUser = message.role === "user";
+                      const isStreamingBubble =
+                        isLoading &&
+                        index === messages.length - 1 &&
+                        message.role === "assistant";
 
-                <div className="text-center text-[10px] leading-4 text-amber-700 sm:text-right sm:text-xs">
-                  Diseñado por la Dirección de Inteligencia artificial de la muncipalidad de San Miguel de Tucumán
-                </div>
-              </div>
-            </form>
+                      return (
+                        <div
+                          key={`${message.role}-${index}`}
+                          className={`flex ${isUser ? "justify-end" : "justify-start"} animate-[fadeIn_0.35s_ease]`}
+                        >
+                          <div
+                            className={[
+                              "max-w-[92%] rounded-[1.45rem] px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[82%] sm:rounded-[1.7rem] sm:px-5 sm:leading-7 md:max-w-[76%]",
+                              isUser
+                                ? "border border-slate-200/80 bg-white text-slate-900 shadow-[0_12px_35px_-22px_rgba(15,23,42,0.42)]"
+                                : "border border-purple-100/80 bg-gradient-to-br from-purple-50 to-white text-slate-800 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.35)]",
+                            ].join(" ")}
+                          >
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-500 sm:text-[11px] sm:tracking-[0.28em]">
+                              {isUser ? "Tu" : "Guia"}
+                            </p>
+                            <p className="whitespace-pre-wrap break-words">
+                              {message.content}
+                              {isStreamingBubble && (
+                                <span className="ml-1 inline-block h-5 w-[2px] animate-pulse rounded-full bg-amber-500 align-middle" />
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {error && (
+                      <div className="rounded-[1.35rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+                        {error}
+                      </div>
+                    )}
+
+                    <div ref={messagesEndRef} />
+                  </div>
+                </section>
+
+                <form
+                  onSubmit={handleSubmit}
+                  className="relative z-10 shrink-0 border-t border-purple-100/80 bg-white/88 px-3 pb-[calc(0.85rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pt-4 md:px-7"
+                >
+                  <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+                    <div className="flex items-end gap-2 rounded-[1.5rem] border border-purple-100/80 bg-white p-2 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.18)] sm:gap-3 sm:rounded-[1.75rem]">
+                      <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={(event) => setInput(event.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Escribe tu mensaje sobre el Via Crucis, una reflexion o una consulta espiritual..."
+                        rows={1}
+                        className="min-h-[50px] flex-1 resize-none overflow-y-auto rounded-[1.1rem] bg-transparent px-3 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 sm:min-h-[52px] sm:px-4"
+                        disabled={isLoading}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isLoading || !input.trim()}
+                        className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-purple-900 px-4 text-sm font-medium text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60 sm:h-12 sm:px-5"
+                      >
+                        {isLoading ? "Guiando..." : "Enviar"}
+                      </button>
+                    </div>
+
+                    <div className="text-center text-[10px] leading-4 text-amber-700 sm:text-right sm:text-xs">
+                      Diseñado por la Dirección de Inteligencia artificial de la muncipalidad de San Miguel de Tucumán
+                    </div>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       </section>
     </main>
   );
 }
+
+
+
+
+
+
+
 
 
