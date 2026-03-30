@@ -122,8 +122,8 @@ function muteVideoElement(video: HTMLVideoElement | null) {
 
 function sanitizeSpeechText(text: string) {
   return text
-    .replace(/([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\/([A-Za-zÁÉÍÓÚáéíóúÑñ]+)/g, "$1")
-    .replace(/[•·]/g, ". ")
+    .replace(/([A-Za-zÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Å“ÃƒÆ’Ã…Â¡ÃƒÆ’Ã‚Â¡ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â­ÃƒÆ’Ã‚Â³ÃƒÆ’Ã‚ÂºÃƒÆ’Ã¢â‚¬ËœÃƒÆ’Ã‚Â±]+)\/([A-Za-zÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Å“ÃƒÆ’Ã…Â¡ÃƒÆ’Ã‚Â¡ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â­ÃƒÆ’Ã‚Â³ÃƒÆ’Ã‚ÂºÃƒÆ’Ã¢â‚¬ËœÃƒÆ’Ã‚Â±]+)/g, "$1")
+    .replace(/[ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â·]/g, ". ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -144,6 +144,7 @@ export default function HomePage() {
   const avatarVideoRef = useRef<HTMLVideoElement | null>(null);
   const idlePrimaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const idleSecondaryVideoRef = useRef<HTMLVideoElement | null>(null);
+  const avatarSectionRef = useRef<HTMLElement | null>(null);
   const messagesContainerRef = useRef<HTMLElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -160,6 +161,26 @@ export default function HomePage() {
       typeof window !== "undefined" &&
         Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
     );
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateAppHeight = () => {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", `${viewportHeight}px`);
+    };
+
+    updateAppHeight();
+    window.addEventListener("resize", updateAppHeight);
+    window.visualViewport?.addEventListener("resize", updateAppHeight);
+    window.visualViewport?.addEventListener("scroll", updateAppHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateAppHeight);
+      window.visualViewport?.removeEventListener("resize", updateAppHeight);
+      window.visualViewport?.removeEventListener("scroll", updateAppHeight);
+    };
   }, []);
 
   useEffect(() => {
@@ -295,6 +316,11 @@ export default function HomePage() {
     shouldStickToBottomRef.current = true;
 
     if (avatarMode) {
+      textareaRef.current?.blur();
+      avatarSectionRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
       setAvatarState("thinking");
       stopAudio();
     }
@@ -369,6 +395,11 @@ export default function HomePage() {
   async function handleSubmit(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     await sendMessage(input);
+
+    if (!avatarMode && typeof window !== "undefined" && window.innerWidth < 768) {
+      textareaRef.current?.blur();
+      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -428,7 +459,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative flex h-[100dvh] overflow-hidden bg-transparent text-slate-900">
+    <main className="relative flex overflow-hidden bg-transparent text-slate-900" style={{ height: "var(--app-height, 100dvh)" }}>
       <section className="relative mx-auto flex h-full w-full max-w-7xl px-0 py-0 sm:px-3 sm:py-3 xl:px-5 xl:py-5">
         <div className="grid h-full w-full min-h-0 overflow-hidden bg-white/92 shadow-[0_24px_60px_-32px_rgba(76,29,149,0.22)] sm:rounded-[2rem] xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="relative hidden overflow-hidden border-r border-purple-100/80 bg-[linear-gradient(180deg,rgba(70,16,25,0.98),rgba(88,28,135,0.96))] xl:flex xl:flex-col xl:p-8">
@@ -516,11 +547,14 @@ export default function HomePage() {
             </header>
 
             {avatarMode ? (
-              <section className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-2 sm:px-5 sm:py-4 md:px-7">
+              <section
+                ref={avatarSectionRef}
+                className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2 sm:px-5 sm:py-4 md:px-6 md:pb-5 lg:overflow-hidden lg:px-7"
+              >
                 <div className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col gap-2 md:gap-4 lg:grid lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:items-stretch">
-                  <div className="flex min-h-0 flex-col gap-2 sm:gap-3">
+                  <div className="flex min-h-0 flex-col gap-2 sm:gap-3 md:max-w-3xl md:self-center lg:max-w-none">
                     <div className="relative overflow-hidden rounded-[1.35rem] border border-purple-100 bg-white shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] sm:rounded-[1.5rem]">
-                      <div className="relative aspect-[4/5] max-h-[64vh] w-full sm:max-h-[48vh] lg:max-h-none">
+                      <div className="relative aspect-[4/5] max-h-[64vh] w-full sm:max-h-[48vh] md:max-h-[58vh] lg:max-h-none">
                         {avatarState === "idle" ? (
                           <>
                             <video
@@ -627,7 +661,7 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  <form onSubmit={handleSubmit} className="rounded-[1.2rem] border border-purple-100 bg-white p-2 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.16)] sm:rounded-[1.4rem] lg:col-span-2">
+                  <form onSubmit={handleSubmit} className="rounded-[1.2rem] border border-purple-100 bg-white p-2 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.16)] sm:rounded-[1.4rem] md:max-w-3xl md:self-center lg:col-span-2 lg:max-w-none">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                       <textarea
                         ref={textareaRef}
@@ -731,7 +765,7 @@ export default function HomePage() {
                     </div>
 
                     <div className="text-center text-[10px] leading-4 text-amber-700 sm:text-right sm:text-xs">
-                      Diseñado por la Dirección de Inteligencia artificial de la muncipalidad de San Miguel de Tucumán
+                      DiseÃƒÆ’Ã‚Â±ado por la DirecciÃƒÆ’Ã‚Â³n de Inteligencia artificial de la muncipalidad de San Miguel de TucumÃƒÆ’Ã‚Â¡n
                     </div>
                   </div>
                 </form>
@@ -743,3 +777,6 @@ export default function HomePage() {
     </main>
   );
 }
+
+
+
