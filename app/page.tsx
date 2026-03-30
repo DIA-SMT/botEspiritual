@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   FormEvent,
@@ -636,7 +636,7 @@ export default function HomePage() {
                         onKeyDown={handleKeyDown}
                         placeholder="Escribe tu mensaje para el guia espiritual..."
                         rows={1}
-                        className="min-h-[52px] flex-1 resize-none overflow-y-auto rounded-[1rem] bg-transparent px-3 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                        className="min-h-[52px] flex-1 resize-none overflow-y-auto rounded-[1rem] bg-transparent px-3 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 sm:text-sm"
                         disabled={isLoading}
                       />
                       <button
@@ -718,7 +718,7 @@ export default function HomePage() {
                         onKeyDown={handleKeyDown}
                         placeholder="Escribe tu mensaje sobre el Via Crucis, una reflexion o una consulta espiritual..."
                         rows={1}
-                        className="min-h-[50px] flex-1 resize-none overflow-y-auto rounded-[1.1rem] bg-transparent px-3 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 sm:min-h-[52px] sm:px-4"
+                        className="min-h-[50px] flex-1 resize-none overflow-y-auto rounded-[1.1rem] bg-transparent px-3 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 sm:min-h-[52px] sm:px-4 sm:text-sm"
                         disabled={isLoading}
                       />
                       <button
@@ -743,12 +743,3 @@ export default function HomePage() {
     </main>
   );
 }
-
-
-
-
-
-
-
-
-
