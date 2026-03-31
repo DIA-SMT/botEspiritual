@@ -183,12 +183,15 @@ function pickMaleVoice(voices: SpeechSynthesisVoice[]) {
   const spanishVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("es"));
   if (!spanishVoices.length) return null;
 
+  // Prioritize premium/siri voices on iOS
+  const premiumHint = /(siri|premium|enhanced|hq|high|neural)/i;
   const maleHint = /(male|mascul|diego|carlos|jorge|juan|miguel|pablo|antonio|raul|federico|martin|tomas|lucas|enrique)/i;
 
   return (
-    spanishVoices.find((voice) => voice.lang.toLowerCase().startsWith("es-ar") && maleHint.test(voice.name)) ||
-    spanishVoices.find((voice) => maleHint.test(voice.name)) ||
-    spanishVoices.find((voice) => voice.lang.toLowerCase().startsWith("es-ar")) ||
+    spanishVoices.find((v) => premiumHint.test(v.name) && maleHint.test(v.name)) ||
+    spanishVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar") && maleHint.test(v.name)) ||
+    spanishVoices.find((v) => maleHint.test(v.name)) ||
+    spanishVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar")) ||
     spanishVoices[0]
   );
 }
@@ -394,8 +397,8 @@ export default function HomePage() {
       utterance.lang = "es-AR";
     }
 
-    utterance.rate = 0.98;
-    utterance.pitch = 0.78;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
     utterance.onstart = () => setAvatarState("speaking");
     utterance.onend = () => {
       utteranceRef.current = null;
@@ -636,9 +639,9 @@ export default function HomePage() {
                     <ArrowLeftIcon className="h-6 w-6" />
                   </button>
                 )}
-                <div className="mx-auto grid h-full w-full max-w-5xl min-h-0 grid-cols-1 gap-0 sm:gap-3 md:gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:items-stretch">
-                  <div className="flex h-full min-h-0 w-full flex-col gap-2 md:max-w-3xl md:self-center lg:max-h-full lg:max-w-none">
-                    <div className="relative flex min-h-[50vh] w-full flex-1 flex-col overflow-hidden border-purple-100 bg-white shadow-2xl sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] lg:min-h-0">
+                <div className="mx-auto grid h-full w-full max-w-5xl min-h-0 flex-1 grid-cols-1 gap-0 sm:gap-3 md:gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:items-stretch">
+                  <div className="flex min-h-0 w-full flex-1 flex-col gap-2 md:max-w-3xl md:self-center lg:max-h-full lg:max-w-none">
+                    <div className="relative flex min-h-[25vh] w-full flex-1 flex-col overflow-hidden border-purple-100 bg-white shadow-2xl sm:min-h-0 sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] lg:min-h-0">
                       <div className="relative min-h-0 w-full flex-1 bg-slate-900">
                         {avatarState === "idle" ? (
                           <>
