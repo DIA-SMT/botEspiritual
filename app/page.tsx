@@ -180,27 +180,35 @@ function SidebarContent() {
 }
 
 function pickMaleVoice(voices: SpeechSynthesisVoice[]) {
-  const spanishVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("es"));
-  if (!spanishVoices.length) return null;
-
-  // Prioritize premium/high quality voices
+  const spanishVoices = voices.filter((v) => v.lang.toLowerCase().startsWith("es"));
+  
+  // High quality / Premium hints
   const premiumHint = /(siri|premium|enhanced|hq|high|neural|google)/i;
-  // Strong male name whitelist
-  const maleHint = /(male|mascul|diego|carlos|jorge|juan|miguel|pablo|antonio|raul|federico|martin|tomas|lucas|enrique|ricardo|victor|esteban|guillermo|alberto|sergio|alejandro|pascual|javier|rodrigo|oscar|alfonso|mateo)/i;
-  // Strong female name blacklist
-  const femaleBlacklist = /(female|hembra|mujer|zira|sabrina|helena|laura|lucia|paulina|monica|angela|conchita|marta|elena|rosa|esperanza|victoria|juana|teresa|isabel|sofia|maria|lupita|claudia|silvia|patricia|daria)/i;
+  // Male hints
+  const maleHint = /(male|mascul|diego|carlos|jorge|juan|miguel|pablo|antonio|raul|federico|martin|tomas|lucas|enrique|ricardo|victor|esteban|guillermo|alberto|sergio|alejandro|pascual|javier|rodrigo|oscar|alfonso|mateo|alvaro|gonzalo|german|facundo|felipe|sebastian|ignacio|bautista|marco|hugo|adriano|marcus)/i;
+  // Female blacklist
+  const femaleBlacklist = /(female|hembra|mujer|zira|sabrina|helena|laura|lucia|paulina|monica|angela|conchita|marta|elena|rosa|esperanza|victoria|juana|teresa|isabel|sofia|maria|lupita|claudia|silvia|patricia|daria|clara|valentina|camila|martina|catalina|antonella|renata|olivia|florencia|agostina)/i;
 
-  const validSpanishVoices = spanishVoices.filter((v) => !femaleBlacklist.test(v.name));
-  const backupVoices = validSpanishVoices.length > 0 ? validSpanishVoices : spanishVoices;
+  const getBestInList = (list: SpeechSynthesisVoice[]) => {
+    const valid = list.filter((v) => !femaleBlacklist.test(v.name));
+    if (!valid.length && !list.length) return null;
+    const pool = valid.length ? valid : list;
+    return (
+      pool.find((v) => premiumHint.test(v.name) && maleHint.test(v.name)) ||
+      pool.find((v) => maleHint.test(v.name)) ||
+      pool[0]
+    );
+  };
 
-  return (
-    validSpanishVoices.find((v) => premiumHint.test(v.name) && maleHint.test(v.name)) ||
-    validSpanishVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar") && maleHint.test(v.name)) ||
-    validSpanishVoices.find((v) => maleHint.test(v.name)) ||
-    backupVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar")) ||
-    backupVoices.find((v) => maleHint.test(v.name)) ||
-    backupVoices[0]
-  );
+  // 1. Try to find the best Spanish male voice
+  const bestSpanish = getBestInList(spanishVoices);
+  if (bestSpanish && (maleHint.test(bestSpanish.name) || !femaleBlacklist.test(bestSpanish.name))) {
+    return bestSpanish;
+  }
+
+  // 2. If no Spanish male voice, search across ALL available voices (e.g., English male)
+  const bestAny = getBestInList(voices);
+  return bestAny || (spanishVoices.length ? spanishVoices[0] : voices[0]);
 }
 
 
