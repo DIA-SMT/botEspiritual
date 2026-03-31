@@ -256,21 +256,32 @@ export default function HomePage() {
     if (typeof window === "undefined") return;
 
     const updateAppHeight = () => {
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      document.documentElement.style.setProperty("--app-height", `${viewportHeight}px`);
+      const vv = window.visualViewport;
+      const height = vv ? Math.round(vv.height) : window.innerHeight;
+      const offset = vv ? Math.round(vv.offsetTop) : 0;
+      
+      document.documentElement.style.setProperty("--app-height", `${height}px`);
+      
+      if (avatarMode && offset > 0) {
+        window.scrollTo(0, offset);
+      }
     };
 
     updateAppHeight();
     window.addEventListener("resize", updateAppHeight);
-    window.visualViewport?.addEventListener("resize", updateAppHeight);
-    window.visualViewport?.addEventListener("scroll", updateAppHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateAppHeight);
+      window.visualViewport.addEventListener("scroll", updateAppHeight);
+    }
 
     return () => {
       window.removeEventListener("resize", updateAppHeight);
-      window.visualViewport?.removeEventListener("resize", updateAppHeight);
-      window.visualViewport?.removeEventListener("scroll", updateAppHeight);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", updateAppHeight);
+        window.visualViewport.removeEventListener("scroll", updateAppHeight);
+      }
     };
-  }, []);
+  }, [avatarMode]);
 
   useEffect(() => {
     if (!shouldStickToBottomRef.current || avatarMode) return;
@@ -490,6 +501,10 @@ export default function HomePage() {
 
     await sendMessage(input);
 
+    if (avatarMode && typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
     if (!avatarMode && typeof window !== "undefined" && window.innerWidth < 768) {
       textareaRef.current?.blur();
       window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
@@ -557,7 +572,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative flex overflow-hidden bg-transparent text-slate-900" style={{ height: "var(--app-height, 100dvh)" }}>
+    <main className="fixed inset-0 flex overflow-hidden bg-white text-slate-900" style={{ height: "var(--app-height, 100dvh)", minHeight: "var(--app-height, 100dvh)" }}>
       <section className="relative mx-auto flex h-full w-full max-w-7xl px-0 py-0 sm:px-3 sm:py-3 xl:px-5 xl:py-5">
         <div className="grid h-full w-full min-h-0 overflow-hidden bg-white/92 shadow-[0_24px_60px_-32px_rgba(76,29,149,0.22)] sm:rounded-[2rem] xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="relative hidden overflow-hidden border-r border-purple-100/80 bg-[linear-gradient(180deg,rgba(70,16,25,0.98),rgba(88,28,135,0.96))] xl:flex xl:flex-col xl:p-8">
@@ -622,8 +637,8 @@ export default function HomePage() {
                   </button>
                 )}
                 <div className="mx-auto grid h-full w-full max-w-5xl min-h-0 grid-cols-1 gap-0 sm:gap-3 md:gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:items-stretch">
-                  <div className="flex h-full min-h-0 w-full flex-col gap-3 md:max-w-3xl md:self-center lg:max-h-full lg:max-w-none">
-                    <div className="relative flex min-h-[60vh] w-full flex-1 flex-col overflow-hidden border-purple-100 bg-white shadow-2xl sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] lg:min-h-0">
+                  <div className="flex h-full min-h-0 w-full flex-col gap-2 md:max-w-3xl md:self-center lg:max-h-full lg:max-w-none">
+                    <div className="relative flex min-h-[50vh] w-full flex-1 flex-col overflow-hidden border-purple-100 bg-white shadow-2xl sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] lg:min-h-0">
                       <div className="relative min-h-0 w-full flex-1 bg-slate-900">
                         {avatarState === "idle" ? (
                           <>
