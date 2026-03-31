@@ -183,16 +183,23 @@ function pickMaleVoice(voices: SpeechSynthesisVoice[]) {
   const spanishVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("es"));
   if (!spanishVoices.length) return null;
 
-  // Prioritize premium/siri voices on iOS
-  const premiumHint = /(siri|premium|enhanced|hq|high|neural)/i;
-  const maleHint = /(male|mascul|diego|carlos|jorge|juan|miguel|pablo|antonio|raul|federico|martin|tomas|lucas|enrique)/i;
+  // Prioritize premium/high quality voices
+  const premiumHint = /(siri|premium|enhanced|hq|high|neural|google)/i;
+  // Strong male name whitelist
+  const maleHint = /(male|mascul|diego|carlos|jorge|juan|miguel|pablo|antonio|raul|federico|martin|tomas|lucas|enrique|ricardo|victor|esteban|guillermo|alberto|sergio|alejandro|pascual|javier|rodrigo|oscar|alfonso|mateo)/i;
+  // Strong female name blacklist
+  const femaleBlacklist = /(female|hembra|mujer|zira|sabrina|helena|laura|lucia|paulina|monica|angela|conchita|marta|elena|rosa|esperanza|victoria|juana|teresa|isabel|sofia|maria|lupita|claudia|silvia|patricia|daria)/i;
+
+  const validSpanishVoices = spanishVoices.filter((v) => !femaleBlacklist.test(v.name));
+  const backupVoices = validSpanishVoices.length > 0 ? validSpanishVoices : spanishVoices;
 
   return (
-    spanishVoices.find((v) => premiumHint.test(v.name) && maleHint.test(v.name)) ||
-    spanishVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar") && maleHint.test(v.name)) ||
-    spanishVoices.find((v) => maleHint.test(v.name)) ||
-    spanishVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar")) ||
-    spanishVoices[0]
+    validSpanishVoices.find((v) => premiumHint.test(v.name) && maleHint.test(v.name)) ||
+    validSpanishVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar") && maleHint.test(v.name)) ||
+    validSpanishVoices.find((v) => maleHint.test(v.name)) ||
+    backupVoices.find((v) => v.lang.toLowerCase().startsWith("es-ar")) ||
+    backupVoices.find((v) => maleHint.test(v.name)) ||
+    backupVoices[0]
   );
 }
 
@@ -219,6 +226,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [avatarMode, setAvatarMode] = useState(false);
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [voiceInputSupported, setVoiceInputSupported] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -244,7 +252,7 @@ export default function HomePage() {
     setSpeechSupported(typeof window !== "undefined" && "speechSynthesis" in window);
     setVoiceInputSupported(
       typeof window !== "undefined" &&
-        Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+      Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
     );
 
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -262,9 +270,9 @@ export default function HomePage() {
       const vv = window.visualViewport;
       const height = vv ? Math.round(vv.height) : window.innerHeight;
       const offset = vv ? Math.round(vv.offsetTop) : 0;
-      
+
       document.documentElement.style.setProperty("--app-height", `${height}px`);
-      
+
       if (avatarMode && offset > 0) {
         window.scrollTo(0, offset);
       }
@@ -641,7 +649,7 @@ export default function HomePage() {
                 )}
                 <div className="mx-auto grid h-full w-full max-w-5xl min-h-0 flex-1 grid-cols-1 gap-0 sm:gap-3 md:gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:items-stretch">
                   <div className="flex min-h-0 w-full flex-1 flex-col gap-2 md:max-w-3xl md:self-center lg:max-h-full lg:max-w-none">
-                    <div className="relative flex min-h-[25vh] w-full flex-1 flex-col overflow-hidden border-purple-100 bg-white shadow-2xl sm:min-h-0 sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)] lg:min-h-0">
+                    <div className={["relative flex w-full flex-col overflow-hidden border-purple-100 bg-white shadow-2xl transition-[height] duration-300 sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)]", isInputFocused ? "h-[25vh]" : "h-[65vh] sm:h-auto sm:min-h-[420px] sm:flex-1"].join(" ")}>
                       <div className="relative min-h-0 w-full flex-1 bg-slate-900">
                         {avatarState === "idle" ? (
                           <>
@@ -690,7 +698,7 @@ export default function HomePage() {
 
                     </div>
 
-                    <div className="mb-2 grid w-full grid-cols-2 gap-3 px-4 sm:mb-0 sm:px-0">
+                    <div className="mb-2 grid w-full grid-cols-2 gap-3 px-4 sm:mb-0 sm:px-0 lg:hidden">
                       <button
                         type="button"
                         onClick={stopAudio}
@@ -719,6 +727,32 @@ export default function HomePage() {
                   </div>
 
                   <div className="hidden min-h-0 flex-col gap-3 lg:flex">
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={stopAudio}
+                        disabled={avatarState !== "speaking"}
+                        className="flex items-center justify-center gap-2 rounded-2xl bg-white p-4 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm ring-1 ring-purple-100 transition hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        <StopIcon className="h-4 w-4" />
+                        Detener
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={toggleRecording}
+                        disabled={!voiceInputSupported || isLoading}
+                        className={[
+                          "flex items-center justify-center gap-2 rounded-2xl p-4 text-xs font-bold uppercase tracking-[0.12em] shadow-lg transition disabled:opacity-50",
+                          isRecording
+                            ? "bg-amber-100 text-amber-900 ring-2 ring-amber-400 animate-pulse"
+                            : "bg-purple-600 text-white shadow-purple-300 hover:bg-purple-700",
+                        ].join(" ")}
+                      >
+                        <MicIcon className="h-4 w-4" />
+                        {isRecording ? "Grabando" : "Hablar"}
+                      </button>
+                    </div>
                     <div className="shrink-0 rounded-[1.4rem] border border-purple-100 bg-white p-4 shadow-[0_18px_40px_-28px_rgba(88,28,135,0.16)]">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-700">Avatar espiritual</p>
                       <p className="mt-2 text-[13px] leading-6 text-slate-700">
@@ -830,7 +864,9 @@ export default function HomePage() {
                         value={input}
                         onChange={(event) => setInput(event.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Escribe tu mensaje sobre el Via Crucis, una reflexion o una consulta espiritual..."
+                        onFocus={() => setIsInputFocused(true)}
+                        onBlur={() => setIsInputFocused(false)}
+                        placeholder="Escribe tu mensaje..."
                         rows={1}
                         className="min-h-[50px] flex-1 resize-none overflow-y-auto rounded-[1.1rem] bg-transparent px-3 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 sm:min-h-[52px] sm:px-4 sm:text-sm"
                         disabled={isLoading}
