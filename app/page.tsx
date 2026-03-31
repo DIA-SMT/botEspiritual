@@ -841,7 +841,7 @@ export default function HomePage() {
                               {isUser ? "Tu" : "Guia"}
                             </p>
                             <p className="whitespace-pre-wrap break-words">
-                              {message.content}
+                              {isUser ? message.content : message.content.replace(/\*\*/g, "")}
                               {isStreamingBubble && (
                                 <span className="ml-1 inline-block h-5 w-[2px] animate-pulse rounded-full bg-amber-500 align-middle" />
                               )}
