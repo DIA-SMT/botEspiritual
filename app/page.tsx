@@ -275,14 +275,33 @@ export default function HomePage() {
     if (typeof window === "undefined") return;
 
     const updateAppHeight = () => {
+      if (typeof window === "undefined") return;
       const vv = window.visualViewport;
       const height = vv ? Math.round(vv.height) : window.innerHeight;
       
       document.documentElement.style.setProperty("--app-height", `${height}px`);
+      
+      // Safety check: if keyboard is dismissed, ensure focus state is reset
+      if (vv && height > window.innerHeight * 0.8) {
+        // This is a heuristic to detect if the keyboard is likely closed
+        // but we don't force setIsInputFocused(false) here to avoid conflicts
+      }
     };
 
     updateAppHeight();
+    
+    const handleFocusOut = () => {
+      // Small delay to ensure state update doesn't conflict with immediate focus changes
+      setTimeout(() => {
+        if (document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
+          setIsInputFocused(false);
+        }
+      }, 100);
+    };
+
     window.addEventListener("resize", updateAppHeight);
+    window.addEventListener("focusout", handleFocusOut);
+
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", updateAppHeight);
       window.visualViewport.addEventListener("scroll", updateAppHeight);
@@ -290,6 +309,7 @@ export default function HomePage() {
 
     return () => {
       window.removeEventListener("resize", updateAppHeight);
+      window.removeEventListener("focusout", handleFocusOut);
       if (window.visualViewport) {
         window.visualViewport.removeEventListener("resize", updateAppHeight);
         window.visualViewport.removeEventListener("scroll", updateAppHeight);
@@ -431,10 +451,19 @@ export default function HomePage() {
 
     if (avatarMode) {
       textareaRef.current?.blur();
-      avatarSectionRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-      if (typeof window !== "undefined") {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
+      setIsInputFocused(false);
+      
+      // Delay scrolls just a bit on mobile to avoid viewport glitches during keyboard dismissal
+      const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
+      const scrollDelay = isMobile ? 150 : 0;
+      
+      window.setTimeout(() => {
+        avatarSectionRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+        if (typeof window !== "undefined") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }, scrollDelay);
+
       setAvatarState("thinking");
       stopAudio();
     }
@@ -516,12 +545,13 @@ export default function HomePage() {
     await sendMessage(input);
 
     if (avatarMode && typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Handled in sendMessage with proper delay
     }
 
     if (!avatarMode && typeof window !== "undefined" && window.innerWidth < 768) {
       textareaRef.current?.blur();
-      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
+      setIsInputFocused(false);
+      window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
     }
   }
 
