@@ -181,7 +181,7 @@ function SidebarContent() {
 
 function pickMaleVoice(voices: SpeechSynthesisVoice[]) {
   const spanishVoices = voices.filter((v) => v.lang.toLowerCase().startsWith("es"));
-  
+
   // High quality / Premium hints
   const premiumHint = /(siri|premium|enhanced|hq|high|neural|google)/i;
   // Male hints
@@ -221,8 +221,8 @@ function muteVideoElement(video: HTMLVideoElement | null) {
 
 function sanitizeSpeechText(text: string) {
   return text
-    .replace(/([A-Za-zÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Å“ÃƒÆ’Ã…Â¡ÃƒÆ’Ã‚Â¡ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â­ÃƒÆ’Ã‚Â³ÃƒÆ’Ã‚ÂºÃƒÆ’Ã¢â‚¬ËœÃƒÆ’Ã‚Â±]+)\/([A-Za-zÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Â°ÃƒÆ’Ã‚ÂÃƒÆ’Ã¢â‚¬Å“ÃƒÆ’Ã…Â¡ÃƒÆ’Ã‚Â¡ÃƒÆ’Ã‚Â©ÃƒÆ’Ã‚Â­ÃƒÆ’Ã‚Â³ÃƒÆ’Ã‚ÂºÃƒÆ’Ã¢â‚¬ËœÃƒÆ’Ã‚Â±]+)/g, "$1")
-    .replace(/[ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢Ãƒâ€šÃ‚Â·]/g, ". ")
+    .replace(/\*/g, "")
+    .replace(/#/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -277,13 +277,8 @@ export default function HomePage() {
     const updateAppHeight = () => {
       const vv = window.visualViewport;
       const height = vv ? Math.round(vv.height) : window.innerHeight;
-      const offset = vv ? Math.round(vv.offsetTop) : 0;
-
+      
       document.documentElement.style.setProperty("--app-height", `${height}px`);
-
-      if (avatarMode && offset > 0) {
-        window.scrollTo(0, offset);
-      }
     };
 
     updateAppHeight();
@@ -591,7 +586,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="fixed inset-0 flex overflow-hidden bg-white text-slate-900" style={{ height: "var(--app-height, 100dvh)", minHeight: "var(--app-height, 100dvh)" }}>
+    <main className="fixed inset-0 flex flex-col overflow-hidden bg-white text-slate-900" style={{ height: "var(--app-height, 100dvh)", minHeight: "100%" }}>
       <section className="relative mx-auto flex h-full w-full max-w-7xl px-0 py-0 sm:px-3 sm:py-3 xl:px-5 xl:py-5">
         <div className="grid h-full w-full min-h-0 overflow-hidden bg-white/92 shadow-[0_24px_60px_-32px_rgba(76,29,149,0.22)] sm:rounded-[2rem] xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="relative hidden overflow-hidden border-r border-purple-100/80 bg-[linear-gradient(180deg,rgba(70,16,25,0.98),rgba(88,28,135,0.96))] xl:flex xl:flex-col xl:p-8">
@@ -655,10 +650,10 @@ export default function HomePage() {
                     <ArrowLeftIcon className="h-6 w-6" />
                   </button>
                 )}
-                <div className="mx-auto grid h-full w-full max-w-5xl min-h-0 flex-1 grid-cols-1 gap-0 sm:gap-3 md:gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:items-stretch">
+                <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-0 sm:grid sm:grid-cols-1 sm:gap-4 md:gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:items-stretch">
                   <div className="flex min-h-0 w-full flex-1 flex-col gap-2 md:max-w-3xl md:self-center lg:max-h-full lg:max-w-none">
-                    <div className={["relative flex w-full flex-col overflow-hidden border-purple-100 bg-white shadow-2xl transition-[height] duration-300 sm:rounded-[1.5rem] sm:border sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)]", isInputFocused ? "h-[25vh]" : "h-[65vh] sm:h-auto sm:min-h-[420px] sm:flex-1"].join(" ")}>
-                      <div className="relative min-h-0 w-full flex-1 bg-slate-900">
+                    <div className={["relative flex w-full flex-col overflow-hidden border-[6px] border-amber-300/20 bg-[#c9a96e] shadow-2xl sm:rounded-[1.5rem] sm:shadow-[0_18px_40px_-28px_rgba(88,28,135,0.22)]", isInputFocused ? "min-h-[140px] h-auto flex-none sm:h-auto sm:min-h-[350px] sm:flex-1" : "flex-1 sm:min-h-[350px]"].join(" ")}>
+                      <div className="relative min-h-0 w-full flex-1 bg-gradient-to-b from-[#b8954f] to-[#8a6d3b]">
                         {avatarState === "idle" ? (
                           <>
                             <video
@@ -671,7 +666,7 @@ export default function HomePage() {
                               onEnded={idleVideoIndex === 0 ? handleAvatarVideoEnded : undefined}
                               onLoadedMetadata={(event) => muteVideoElement(event.currentTarget)}
                               className={[
-                                "absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300",
+                                "absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 sm:object-contain sm:object-center",
                                 idleVideoIndex === 0 ? "opacity-100" : "opacity-0 pointer-events-none",
                               ].join(" ")}
                             />
@@ -684,7 +679,7 @@ export default function HomePage() {
                               onEnded={idleVideoIndex === 1 ? handleAvatarVideoEnded : undefined}
                               onLoadedMetadata={(event) => muteVideoElement(event.currentTarget)}
                               className={[
-                                "absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300",
+                                "absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 sm:object-contain sm:object-center",
                                 idleVideoIndex === 1 ? "opacity-100" : "opacity-0 pointer-events-none",
                               ].join(" ")}
                             />
@@ -699,7 +694,7 @@ export default function HomePage() {
                             playsInline
                             loop
                             onLoadedMetadata={(event) => muteVideoElement(event.currentTarget)}
-                            className="h-full w-full object-cover object-top"
+                            className="h-full w-full object-cover object-top sm:object-contain sm:object-center"
                           />
                         )}
                       </div>
@@ -790,9 +785,11 @@ export default function HomePage() {
                         value={input}
                         onChange={(event) => setInput(event.target.value)}
                         onKeyDown={handleKeyDown}
+                        onFocus={() => setIsInputFocused(true)}
+                        onBlur={() => setIsInputFocused(false)}
                         placeholder="Escribe tu mensaje..."
                         rows={1}
-                        className="min-h-[52px] w-full flex-1 resize-none overflow-y-auto rounded-[1rem] bg-transparent px-3 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 sm:text-sm"
+                        className="min-h-[50px] w-full flex-1 resize-none overflow-y-auto rounded-[1rem] bg-transparent px-3 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 sm:text-sm"
                         disabled={isLoading}
                       />
                       <button
@@ -803,9 +800,7 @@ export default function HomePage() {
                         {isLoading ? "Guiando..." : "Enviar"}
                       </button>
                     </div>
-                    <p className="mt-2 hidden text-xs leading-5 text-slate-500 lg:block">
-                      La voz se reproducira en tono masculino cuando el navegador disponga de una voz en espanol compatible.
-                    </p>
+
                   </form>
                 </div>
               </section>
@@ -978,6 +973,7 @@ export default function HomePage() {
     </main>
   );
 }
+
 
 
 
